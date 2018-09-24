@@ -1,0 +1,754 @@
+---
+title: "The PODS final project --FDS 2017/2018--"
+author: "Davide Aureli, Valerio Guarrasi and Andrea Marcocchia"
+date: "12/02/2018"
+output: html_document
+---
+
+```{r setup, include=TRUE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Library
+Here we load the library used in the code: 
+
+*"xboost" is used to make the model with the Xboost method
+*"glmnet" is used to make the model with the Lasso method. Glmnet is a package that fits a generalized linear model via penalized maximum likelihood. 
+*"dplyr"  is used to use the  %>% command and, more in general, a flexible grammar of data manipulation.
+*"mice"   is used to replace NA with an imputational method
+
+```{r Load_Libraries}
+library(xgboost)
+require(dplyr)
+library(mice)
+library(glmnet)
+```
+
+# Load data
+
+We load the train and test datasets, from the Kaggle Competition:
+"https://www.kaggle.com/c/house-prices-advanced-regression-techniques/data"
+
+```{r Load_Train_and_Test}
+train = read.csv("train.csv", stringsAsFactors=FALSE)
+test = read.csv("test.csv", stringsAsFactors=FALSE)
+```
+
+#FUNCTIONS Used
+
+We write four functions to change our datasets. This functions are:
+
+* clean_data()
+* drop_NA()
+* drop_var()
+* create_interaction()
+
+We make these operations in both train and test datasets, and so we prefer to write a function for each operation, and after only apply it.
+ 
+## Clean data
+
+Here we group and transform categorical variables.
+We start on the train dataset.
+
+At the beginning we tried to group the variables in categories referring to the sale price. But in this way we lost information. So we decided to transform the categorical variables in factorial without grouping them. So each observations has its respective value.
+
+For example: at the begining the neighborhoods that have houses with similar prices were grouped in the same category. Now each neighborhood has a different factor.
+
+Sometimes the value is missing (NA) on purpose. This means that that house is missing that features, so here we assigned the value 0. 
+Otherwise, when the observations have a specific meaning, we assign values starting from 1 to the number of different observations.
+
+```{r Clean_Function}
+clean_data <- function(df){
+  
+# attach function to prevent on always writing df$variable_name
+# With this command we can directly write variable_name
+attach(df)
+
+# Group for Heating
+df$riscaldamento[Heating=="GasA"] = 6
+df$riscaldamento[Heating=="GasW"] = 5
+df$riscaldamento[Heating=="Floor"] = 4
+df$riscaldamento[Heating=="Grav"] = 3
+df$riscaldamento[Heating=="OthW"] = 2
+df$riscaldamento[Heating=="Wall"] = 1  
+
+# Group for LotShape
+df$forma_casa[LotShape == "Reg"] = 4
+df$forma_casa[LotShape == "IR1"] = 3
+df$forma_casa[LotShape == "IR2"] = 2
+df$forma_casa[LotShape == "IR3"] = 1
+
+# Group for BsmtQual
+df$q_cantina[BsmtQual == "Ex"] = 4
+df$q_cantina[BsmtQual == "Gd"] = 3
+df$q_cantina[BsmtQual == "TA"] = 2
+df$q_cantina[BsmtQual == "Fa"] = 1
+df$q_cantina[is.na(BsmtQual)] = 0
+
+# Group for BsmtCond
+df$c_cantina[BsmtCond == "Gd"] = 4
+df$c_cantina[BsmtCond == "TA"] = 3
+df$c_cantina[BsmtCond == "Fa"] = 2
+df$c_cantina[is.na(BsmtCond)] = 0
+df$c_cantina[BsmtCond == "Po"] = 1
+
+# Group for LandContour
+df$altide[LandContour == "Lvl"] = 4
+df$altide[LandContour == "Low"] = 3
+df$altide[LandContour == "Bnk"] = 2
+df$altide[LandContour == "HLS"] = 1
+
+# Group for LotConfig
+df$vicolo_cieco[LotConfig =="CulDSac"] = 5
+df$vicolo_cieco[LotConfig =="FR3"] = 4
+df$vicolo_cieco[LotConfig =="FR2"] = 3
+df$vicolo_cieco[LotConfig =="Inside"] = 2
+df$vicolo_cieco[LotConfig =="Corner"] = 1
+
+# Group for BldgType
+df$dimora[df$BldgType=="1Fam"] = 5
+df$dimora[df$BldgType=="TwnhsE"] = 4
+df$dimora[df$BldgType=="2fmCon"] = 3
+df$dimora[df$BldgType=="Duplex"] = 2
+df$dimora[df$BldgType=="Twnhs"] = 1
+
+# Group for RoofStyle
+df$copertura_tetto[RoofStyle =="Hip"] = 6
+df$copertura_tetto[RoofStyle == "Shed"] = 5
+df$copertura_tetto[RoofStyle == "Flat"] = 4
+df$copertura_tetto[RoofStyle == "Gable"] = 3
+df$copertura_tetto[RoofStyle == "Gambrel"] = 2
+df$copertura_tetto[RoofStyle == "Mansard"] = 1
+
+# Group for RoofMatl
+df$sostanza_tetto[RoofMatl=="Membran"] = 8
+df$sostanza_tetto[RoofMatl=="WdShake"] = 7
+df$sostanza_tetto[RoofMatl == "WdShngl"] = 6
+df$sostanza_tetto[RoofMatl == "ClyTile"] = 5
+df$sostanza_tetto[RoofMatl == "CompShg"] = 4
+df$sostanza_tetto[RoofMatl == "Metal"] = 3
+df$sostanza_tetto[RoofMatl == "Roll"] = 2
+df$sostanza_tetto[RoofMatl == "Tar&Grv"] = 1
+
+# Group for Street
+df$vialetto[Street == "Pave"] = 2
+df$vialetto[Street == "Grvl"] = 1
+
+# Group for Neighborhood
+df$vicinato[Neighborhood=="Blueste"] = 25
+df$vicinato[Neighborhood=="BrDale"] = 24
+df$vicinato[Neighborhood=="BrkSide"] = 23
+df$vicinato[Neighborhood=="Edwards"] = 22
+df$vicinato[Neighborhood=="IDOTRR"] = 21
+df$vicinato[Neighborhood=="MeadowV"] = 20
+df$vicinato[Neighborhood=="OldTown"] = 19
+df$vicinato[Neighborhood=="Sawyer"] = 18
+df$vicinato[Neighborhood=="Blmngtn"] = 17
+df$vicinato[Neighborhood=="CollgCr"] = 16
+df$vicinato[Neighborhood=="Gilbert"] = 15
+df$vicinato[Neighborhood=="Mitchel"] = 14
+df$vicinato[Neighborhood=="NAmes"] = 13
+df$vicinato[Neighborhood=="NPkVill"] = 12
+df$vicinato[Neighborhood=="NWAmes"] = 11
+df$vicinato[Neighborhood=="SawyerW"] = 10
+df$vicinato[Neighborhood=="SWISU"] = 9
+df$vicinato[Neighborhood=="ClearCr"] = 8
+df$vicinato[Neighborhood=="Crawfor"] = 7
+df$vicinato[Neighborhood=="NoRidge"] = 6
+df$vicinato[Neighborhood=="NridgHt"] = 5
+df$vicinato[Neighborhood=="Somerst"] = 4
+df$vicinato[Neighborhood=="StoneBr"] = 3
+df$vicinato[Neighborhood=="Timber"] = 2
+df$vicinato[Neighborhood=="Veenker"] = 1
+
+# Group for HouseStyle
+df$stile_casa[HouseStyle =="1.5Unf"] = 8
+df$stile_casa[HouseStyle =="SFoyer"] = 7
+df$stile_casa[HouseStyle =="1.5Fin"] = 6
+df$stile_casa[HouseStyle =="1Story"] = 5
+df$stile_casa[HouseStyle =="2.5Unf"] = 4
+df$stile_casa[HouseStyle =="SLvl"] = 3
+df$stile_casa[HouseStyle =="2.5Fin"] = 2
+df$stile_casa[HouseStyle =="2Story"] = 1
+
+# Group for Exterior1st
+df$mura1[Exterior1st=="AsbShng"] = 15
+df$mura1[Exterior1st=="AsphShn"] = 14
+df$mura1[Exterior1st=="BrkComm"] = 13
+df$mura1[Exterior1st=="CBlock"] = 12
+df$mura1[Exterior1st=="BrkFace"] = 11
+df$mura1[Exterior1st=="HdBoard"] = 10
+df$mura1[Exterior1st=="MetalSd"] = 9
+df$mura1[Exterior1st=="Plywood"] = 8
+df$mura1[Exterior1st=="Stucco"] = 7
+df$mura1[Exterior1st=="Wd Sdng"] = 6
+df$mura1[Exterior1st=="WdShing"] = 5
+df$mura1[Exterior1st=="CemntBd"] = 4
+df$mura1[Exterior1st=="ImStucc"] = 3
+df$mura1[Exterior1st=="Stone"] = 2
+df$mura1[Exterior1st=="VinylSd"] = 1
+
+# Group for Exterior2nd
+df$mura2[Exterior2nd =="AsbShng"] = 16
+df$mura2[Exterior2nd =="AsphShn"] = 15
+df$mura2[Exterior2nd =="Brk Cmn"] = 14
+df$mura2[Exterior2nd =="CBlock"] = 13
+df$mura2[Exterior2nd =="BrkFace"] = 12
+df$mura2[Exterior2nd =="HdBoard"] = 11
+df$mura2[Exterior2nd =="MetalSd"] = 10
+df$mura2[Exterior2nd =="Plywood"] = 9
+df$mura2[Exterior2nd =="Stone"] = 8
+df$mura2[Exterior2nd =="Stucco"] = 7
+df$mura2[Exterior2nd =="Wd Sdng"] = 6
+df$mura2[Exterior2nd =="Wd Shng"] = 5
+df$mura2[Exterior2nd =="CmentBd"] = 4
+df$mura2[Exterior2nd =="ImStucc"] = 3
+df$mura2[Exterior2nd =="Other"] = 2
+df$mura2[Exterior2nd =="VinylSd"] = 1
+
+# Group for Utilities
+df$egws[Utilities == "AllPub"] = 2
+df$egws[Utilities == "NoSeWa"] = 1
+
+# Group for LandSlope
+df$pendenza[LandSlope == "Gtl"] = 3
+df$pendenza[LandSlope == "Mod"] = 2
+df$pendenza[LandSlope == "Sev"] = 1
+
+# Group for MasVnrType
+df$mur_est1[MasVnrType=="Stone"] = 4
+df$mur_est1[MasVnrType=="BrkFace"] = 3
+df$mur_est1[is.na(MasVnrType)] = 0
+df$mur_est1[MasVnrType=="BrkCmn"] = 2
+df$mur_est1[MasVnrType=="None"] = 1
+
+# Group for ExterQual
+df$q_est[ExterQual == "Ex"] = 4
+df$q_est[ExterQual == "Gd"] = 3
+df$q_est[ExterQual == "TA"] = 2
+df$q_est[ExterQual == "Fa"] = 1
+
+# Group for ExterCond
+df$c_est[ExterCond == "Ex"] = 5
+df$c_est[ExterCond == "Gd"] = 4
+df$c_est[ExterCond == "TA"] = 3
+df$c_est[ExterCond == "Fa"] = 2
+df$c_est[ExterCond == "Po"] = 1
+
+# Group for Foundation
+df$cement_fdta[Foundation == "PConc"] = 6
+df$cement_fdta[Foundation == "BrkTil"] = 5
+df$cement_fdta[Foundation == "CBlock"] = 4
+df$cement_fdta[Foundation == "Slab"] = 3
+df$cement_fdta[Foundation == "Stone"] = 2
+df$cement_fdta[Foundation == "Wood"] = 1
+
+# Group for BsmtExposure
+df$e_cantina[BsmtExposure == "Gd"] = 4
+df$e_cantina[BsmtExposure == "Av"] = 3
+df$e_cantina[BsmtExposure == "Mn"] = 2
+df$e_cantina[BsmtExposure == "No"] = 1
+df$e_cantina[is.na(BsmtExposure)] = 0
+
+# Group for BsmtFinType1
+df$f1_cantina[BsmtFinType1 == "GLQ"] = 6
+df$f1_cantina[BsmtFinType1 == "Unf"] = 5
+df$f1_cantina[BsmtFinType1 == "ALQ"] = 4
+df$f1_cantina[BsmtFinType1=="BLQ"] = 3
+df$f1_cantina[BsmtFinType1=="Rec"] = 2
+df$f1_cantina[BsmtFinType1=="LwQ"] = 1
+df$f1_cantina[is.na(BsmtFinType1)] = 0
+
+# Group for BsmtFinType2
+df$f2_cantina[BsmtFinType2 == "ALQ"] = 6
+df$f2_cantina[BsmtFinType2 == "Unf"] = 5
+df$f2_cantina[BsmtFinType2 == "GLQ"] = 4
+df$f2_cantina[BsmtFinType2=="Rec"] = 3
+df$f2_cantina[BsmtFinType2=="LwQ"] = 2
+df$f2_cantina[BsmtFinType2 == "BLQ"] = 1
+df$f2_cantina[is.na(BsmtFinType2)] = 0
+
+# Group for HeatingQC
+df$q_riscaldamento[HeatingQC == "Ex"] = 5
+df$q_riscaldamento[HeatingQC == "Gd"] = 4
+df$q_riscaldamento[HeatingQC == "TA"] = 3
+df$q_riscaldamento[HeatingQC == "Fa"] = 2
+df$q_riscaldamento[HeatingQC == "Po"] = 1
+
+# Group for CentralAir
+df$aria[CentralAir == "Y"] = 1
+df$aria[CentralAir == "N"] = 0
+
+# Group for Electrical
+df$s_corrente[Electrical == "SBrkr" ] = 5
+df$s_corrente[is.na(df$Electrical)] = 0
+df$s_corrente[Electrical == "FuseA"] = 3
+df$s_corrente[Electrical == "FuseF"] = 2
+df$s_corrente[Electrical == "FuseP"] = 1
+df$s_corrente[Electrical == "Mix"] = 4
+
+# Group for KitchenQual
+df$cucina[KitchenQual == "Ex"] = 4
+df$cucina[KitchenQual == "Gd"] = 3
+df$cucina[KitchenQual == "TA"] = 2
+df$cucina[KitchenQual == "Fa"] = 1
+
+# Group for FireplaceQu
+df$fuoco[FireplaceQu == "Ex"] = 5
+df$fuoco[FireplaceQu == "Gd"] = 4
+df$fuoco[FireplaceQu == "TA"] = 3
+df$fuoco[FireplaceQu == "Fa"] = 2
+df$fuoco[FireplaceQu == "Po"] = 1
+df$fuoco[is.na(FireplaceQu)] = 0
+
+# Group for GarageType
+df$t_macchina[GarageType=="Attchd"] = 6
+df$t_macchina[GarageType=="BuiltIn"] = 5
+df$t_macchina[GarageType=="2Types"] = 4
+df$t_macchina[GarageType=="Basment"] = 3
+df$t_macchina[GarageType=="CarPort"] = 2
+df$t_macchina[GarageType=="Detchd"] = 1
+df$t_macchina[is.na(GarageType)] = 0
+
+# Group for GarageFinish
+df$f_macchina[GarageFinish=="Fin"] = 3
+df$f_macchina[GarageFinish=="RFn"] = 2
+df$f_macchina[GarageFinish=="Unf"] = 1
+df$f_macchina[is.na(GarageFinish)] = 0
+
+# Group for GarageQual
+df$q_macchina[GarageQual == "Ex"] = 5
+df$q_macchina[GarageQual == "Gd"] = 4
+df$q_macchina[GarageQual == "TA"] = 3
+df$q_macchina[GarageQual == "Fa"] = 2
+df$q_macchina[GarageQual == "Po"] = 1
+df$q_macchina[is.na(GarageQual)] = 0
+
+# Group for GarageCond
+df$q2_macchina[GarageCond == "Ex"] = 5
+df$q2_macchina[GarageCond == "Gd"] = 4
+df$q2_macchina[GarageCond == "TA"] = 3
+df$q2_macchina[GarageCond == "Fa"] = 2
+df$q2_macchina[GarageCond == "Po" ] = 1
+df$q2_macchina[is.na(GarageCond)] = 0
+
+# Group for PavedDrive
+df$vial_asf[PavedDrive == "Y"] = 3
+df$vial_asf[PavedDrive == "N"] = 2
+df$vial_asf[PavedDrive == "P"] = 1
+df$vial_asf[is.na(PavedDrive)] = 0
+
+# Group for Functional
+df$casa_f[Functional=="Typ"] = 7
+df$casa_f[Functional=="Mod"] = 6
+df$casa_f[Functional=="Maj1"] = 5
+df$casa_f[Functional=="Maj2"] = 4
+df$casa_f[Functional=="Min1"] = 3
+df$casa_f[Functional=="Min2"] = 2
+df$casa_f[Functional=="Sev"] = 1
+df$casa_f[is.na(Functional)] = 0
+
+# Group for PoolQC
+df$piscina_q[PoolQC =="Ex"] = 3
+df$piscina_q[PoolQC =="Gd"] = 2
+df$piscina_q[PoolQC =="Fa"] = 1
+df$piscina_q[is.na(PoolQC)] = 0
+
+# Group for Fence
+df$cancello_p[Fence =="GdPrv"] = 4
+df$cancello_p[Fence =="GdWo"] = 3
+df$cancello_p[Fence =="MnPrv"] = 2
+df$cancello_p[Fence =="MnWw"] = 1
+df$cancello_p[is.na(Fence)] = 0
+
+# Group for Alley
+df$alley_p[Alley =="Pave"] = 2
+df$alley_p[Alley =="Grvl"] = 1
+df$alley_p[is.na(Alley)] = 0
+
+# Group for SaleType
+df$tipologia_vendita[SaleType=="New"] = 9
+df$tipologia_vendita[SaleType == "Con"] = 8
+df$tipologia_vendita[SaleType =="CWD"] = 7
+df$tipologia_vendita[SaleType =="ConLI"] = 6
+df$tipologia_vendita[SaleType=="WD"] = 5
+df$tipologia_vendita[SaleType=="COD"] = 4
+df$tipologia_vendita[SaleType =="ConLw"] = 3
+df$tipologia_vendita[SaleType=="ConLD"] = 2
+df$tipologia_vendita[SaleType =="Oth"] = 1
+
+# Group for SaleCondition
+df$s_vendita[SaleCondition=="Partial"] = 6
+df$s_vendita[SaleCondition=="Normal"] = 5
+df$s_vendita[SaleCondition == "Alloca"] = 4
+df$s_vendita[SaleCondition =="Family"] = 3
+df$s_vendita[SaleCondition=="Abnorml"] = 2
+df$s_vendita[SaleCondition =="AdjLand"] = 1
+
+# Group for Condition1
+df$locazione1[Condition1=="PosA"] = 9
+df$locazione1[Condition1 =="PosN"] = 8
+df$locazione1[Condition1 =="Artery"] = 7
+df$locazione1[Condition1 =="Norm"] = 6
+df$locazione1[Condition1 =="Feedr"] = 5
+df$locazione1[Condition1 =="RRAe"] = 4
+df$locazione1[Condition1 =="RRAn"] = 3
+df$locazione1[Condition1 =="RRNe"] = 2
+df$locazione1[Condition1 =="RRNn"] = 1
+
+# Group for Condition2
+df$locazione2[Condition2=="PosA"] = 8
+df$locazione2[Condition2 =="PosN"] = 7
+df$locazione2[Condition2 =="Artery"] = 6
+df$locazione2[Condition2 =="Norm"] = 5
+df$locazione2[Condition2 =="Feedr"] = 4
+df$locazione2[Condition2 =="RRAe"] = 3
+df$locazione2[Condition2 =="RRAn"] = 2
+df$locazione2[Condition2 =="RRNn"] = 1
+
+# Group for MSZoning
+df$luogo[MSZoning =="FV"] = 5
+df$luogo[MSZoning=="RL"] = 4
+df$luogo[MSZoning =="RH"] = 3
+df$luogo[MSZoning =="RM"] = 2
+df$luogo[MSZoning =="C (all)"] = 1
+
+# detach is the inverse function of attach
+detach(df)
+
+return(df)
+}
+
+```
+
+##Drop Variables
+
+Now, we dropped off the variables that are no longer needed.
+
+```{r Drop_Variable_Function}
+drop_var <- function(df)
+{
+# xx is a copy of df dataset without the variables that we decide to delete
+xx = df %>% select(-c(Street,LotShape,LandContour,Utilities,LotConfig,LandSlope,Neighborhood,Condition1,Condition2,BldgType,HouseStyle,RoofStyle,RoofMatl,Exterior1st,Exterior2nd,MasVnrType,ExterQual,ExterCond,Foundation,BsmtQual,BsmtCond,BsmtExposure,BsmtFinType1,BsmtFinType2,Heating,HeatingQC,CentralAir,Electrical,KitchenQual  ,FireplaceQu  ,GarageType  ,GarageFinish  ,GarageQual  ,GarageCond  ,PavedDrive  ,Functional  ,PoolQC  ,Fence  ,MiscFeature  ,SaleType  ,SaleCondition  ,MSZoning  ,Alley  ))
+
+# return xx dataset
+return(xx)
+}
+```
+
+##Drop NA
+
+We fill the NA values in our variables with some reasonable values, using different methods.
+
+```{r drop_NA_Function}
+drop_NA <- function(df)
+{
+# NA = 0 when NA meant "absence of feature"
+df$BsmtFinSF1[is.na(df$BsmtFinSF1)] = 0
+df$BsmtFinSF2[is.na(df$BsmtFinSF2)] = 0
+df$BsmtUnfSF[is.na(df$BsmtUnfSF)] = 0
+df$TotalBsmtSF[is.na(df$TotalBsmtSF)] = 0
+df$BsmtFullBath[is.na(df$BsmtFullBath)] = 0
+df$BsmtHalfBath[is.na(df$BsmtHalfBath)] = 0
+df$GarageCars[is.na(df$GarageCars)] = 0
+df$GarageArea[is.na(df$GarageArea)] = 0
+df$egws[is.na(df$egws)] = 0
+df$cucina[is.na(df$cucina)] = 0
+
+
+# For this variables we substituted the NA values with the variable's mode
+df$mura1[is.na(df$mura1)] = unname(which(table(df$mura1)==max(table(df$mura1))))
+df$mura2[is.na(df$mura2)] = unname(which(table(df$mura2)==max(table(df$mura2))))
+df$luogo[is.na(df$luogo)] = unname(which(table(df$luogo)==max(table(df$luogo))))
+df$tipologia_vendita[is.na(df$tipologia_vendita)] = unname(which(table(df$tipologia_vendita)==max(table(df$tipologia_vendita))))
+
+
+# For the other variables we decided to use "cart" method (it is slow but it works well)
+# mice package substitutes the remaining NA values with the best one found with the cart method
+auxiliar_train = mice(df, m=1 , maxit = 1 , method = "cart")
+df = complete(auxiliar_train,1)
+
+return(df)
+}
+```
+
+## Interactions 
+
+Here we create new variables, that are interactions between old ones.
+
+```{r interactions_Function}
+# Interactions based on correlation
+create_interaction <- function(df)
+{
+# Interactions are created by making the product between the variables that are already in our dataset
+df$years_cond =  df$YearBuilt*df$OverallCond
+df$ann_q = df$YearBuilt*df$OverallQual
+df$BsmtType1Qual = df$q_cantina*df$f1_cantina
+df$ann_r_q = df$YearRemodAdd*df$OverallQual 
+df$cant_q = df$OverallQual*df$TotalBsmtSF 
+df$massVnrCond =  df$MasVnrArea*df$c_est
+df$bagn_q = df$OverallQual*df$FullBath 
+df$qual_zon = df$OverallQual*df$GrLivArea 
+df$massVnrQual =  df$MasVnrArea*df$q_est
+df$outside_q = df$OverallQual*df$c_est
+df$BsmtType1Cond = df$c_cantina*df$f1_cantina
+
+
+# The df datset, that we return in the function, is the one composed by both new and old variables
+return(df)
+}
+```
+
+#Work On Train 
+
+Here we apply the function built previously to clean the variables in the train dataset.
+We overwrite the previous train dataset with the new one, in which we apply "clean_data" function, in order to avoid the presence of too many variables in the Global Environment.
+
+```{r Clean_Train}
+train <- clean_data(train)
+```
+
+Here we apply the function built previously to drop the variables no longer needed in the train dataset.
+
+```{r Drop_Variable_Train}
+train <- drop_var(train)
+```
+
+Here we apply the function built previously to delete the NAs in the train dataset.
+
+```{r drop_NA_Train}
+train <- drop_NA(train)
+```
+
+Here we use the "create_interaction" function to create new variables based on correlation in the train dataset.
+
+```{r interactions_Train}
+train <- create_interaction(train)
+```
+
+Remove outliers respect of GrLivArea in the train dataset.
+
+```{r remove_outliers_Train}
+train = train[-which(train$GrLivArea > 4000 & train$SalePrice < 3e+05),]
+```
+
+#Linear Model
+
+Here we create a new dataset that is a copy of the train dataset, to work with linear regression model without making changes on the original train dataset.
+
+```{r copy_dataset}
+train_lin = train
+```
+
+Here we standardize the non-binary variables in our "train_lin" dataset except for the SalePrice.
+
+```{r standardization}
+# Save SalePrice column in an auxiliar varialbe, because we don't want to standardize it
+aux = train_lin$SalePrice
+for(i in 2:(ncol(train_lin))){
+  # Evaluate the mean and the standard error for each variable in the loop
+  std_err=sd(train_lin[,i])
+  media = mean(train_lin[,i])
+  # Check if the variable is binary
+  if ((max(train_lin[,i])!=1) | (min(train_lin[,i])!=0))
+  {
+    
+  # In case of non-binary variable, make the standardization on all the variable elements
+  for(j in 1:length(train_lin[,i])){
+    train_lin[j,i]=(train_lin[j,i] - media)/std_err
+  }
+  }
+}
+
+# Attach the non standardize SalePrice column in the dataset train_lin
+train_lin$SalePrice = aux
+```
+
+After the standardization, we replace the original SalePrice column with the logarithm of that column.
+
+```{r log_SalePrice}
+train_lin$SalePrice = log(train_lin$SalePrice)
+```
+
+Now we have our final dataset, and we build our linear model removing a few variables, which give us multicollinearity.
+To choose the variables to remove, we used "backward elimination" algorithm.
+
+This algorithm starts with all candidate variables, testing the deletion of each variable using a chosen model fit criterion (p-value and R^2 adjusted), deleting the variable whose loss gives the most statistically insignificant deterioration of the model fit, and repeating this process until no further variables can be deleted without a statistically significant loss of fit.
+
+```{r lm}
+# In our model Y is the SalePrice and X are all the variables in the "train_lin" dataset, except of the ones written with the "-" symbol
+modello_lin = lm(SalePrice ~ .-Id -BsmtFinSF1 -BsmtFinSF2 -BsmtUnfSF -GrLivArea , data=train_lin)
+```
+
+# Work On Test
+
+Now we do the same things that we made in train dataset on the test one.
+Starting by cleaning the data.
+
+```{r Clean_Test }
+test <-clean_data(test)
+```
+
+Here, we dropped off the variables that are no longer needed.
+
+```{r Drop_Variable_Test}
+test <- drop_var(test)
+```
+
+We fill the NA values in our variables with some reasonable values, as done in the train dataset.
+
+```{r Drop_NA_Test}
+test <- drop_NA(test)
+```
+
+Here we use the "create_interaction" function to create new variables based on correlation in the test dataset.
+
+```{r interactions_Test}
+# Interactions based on correlation
+test <- create_interaction(test)
+```
+
+# Linear Model Prediction
+
+Here we create a new dataset that is a copy of the test dataset, to work with linear regression model without making changes on the original test dataset.
+
+```{r copy_Test}
+test_lin = test
+```
+
+As done for the train dataset, we standardize the dataset.
+In this dataset there isn't the SalePrice column, and so we don't have to remove it before the standardization.
+
+```{r test_standardization}
+for(i in 2:(ncol(test_lin)))
+  {
+  # Evaluate the mean and the standard error for each variable in the loop
+  std_err=sd(test_lin[,i])
+  media = mean(test_lin[,i])
+  # Check if the variable is binary
+  if ((max(test_lin[,i])!=1) | (min(test_lin[,i])!=0))
+  {
+  # In case of non-binary variable, make the standardization on all the variable elements
+  for(j in 1:length(test_lin[,i])){
+    test_lin[j,i]=(test_lin[j,i] - media)/std_err
+  }
+  }
+}
+```
+
+Here we predict the SalePrice of the test dataset using our linear model (built in "modello_lin").
+At the end we also create an .csv file with the result.
+
+```{r write_csv}
+# Add SalePrice column to train_lin dataset, using as value the exponential of the predicted SalePrice, using our linear model
+
+# We use the exponential because we did the logarithm of the SalePrice previously
+test_lin$SalePrice = exp(predict(modello_lin, newdata = test_lin))
+test_lin %>%
+  select(Id, SalePrice )%>%
+  # Write the csv file with two columns: Id and SalePrice, as asked in Kaggle competition
+  write.csv(file = "lm1.csv", row.names = F)
+```
+
+# XG-BOOST
+
+We return working on the original test and train dataset, applying XGBoost method. XGBoost is an implementation of gradient boosted decision trees designed for speed and performance.
+We start by working on the train dataset to estimate the parameters.
+
+```{r xboost}
+# Create a vector with all the variables'names except SalePrice
+# In our Train dataset SalePrice is the 38th column
+variable_name = c(colnames(train[,c(2:37, 39:length(train))]))
+
+# Transform train dataset in a sparse matrix
+# This is the format needed by xboost method
+train_sparse_matrix= as(as.matrix(train, rownames.force=NA),"sparseMatrix")
+
+trainD = xgb.DMatrix(data = train_sparse_matrix[,variable_name], label = train_sparse_matrix[,"SalePrice"]) 
+
+# Define parameters for x-boost
+features = list(colsample_bytree = .7, subsample = .7, booster = "gbtree", max_depth = 7 ,eta = 0.02, eval_metric = "rmse",objective="reg:linear")
+
+# Train the Xgboost model
+bstSparse =xgb.train(params = features,data = trainD, nrounds = 1000, watchlist = list(train = trainD),verbose = TRUE,print_every_n = 50,nthread = 2)
+
+predict=as.data.frame(test)
+# Transform the test dataset in a matrix 
+predict_matrix= as.matrix(predict, rownames.force=NA)
+
+# Transform test dataset in a sparse matrix
+predicting = as(predict_matrix, "sparseMatrix")
+
+```
+
+Actually do the predicting on the test dataset.
+
+```{r finalpredict_xboost}
+# Make the prediction on the test dataset (that now is a sparsematrix)
+boostPred = as.data.frame(as.matrix(predict(bstSparse, predicting[,variable_name])))
+
+# Change column name of boostPred dataframe
+colnames(boostPred) = "prediction"
+
+# Add a column to an existing dataframe
+boost_Out = cbind(predict, boostPred) 
+
+# Create a new dataframe with only Id and SalePrice columns 
+#In this dataframe SalePrice is estimated using xboost method
+final_df_xboost = data.frame(Id = boost_Out$Id, SalePrice = boost_Out$prediction)
+
+# Here we create the .csv file
+write.csv(final_df_xboost, file = "xboost1.csv", row.names = F)
+```
+
+#LASSO
+
+Now we estimate our third model, that is the Lasso Regression. Lasso regularization work by adding a penalty term to the log-likelihood function, called $\lambda$.
+In this chunk we’ll use the function cv.glmnet, which automatically performs a grid search to find the optimal value of $\lambda$.
+We start by working on the train dataset to estimate the parameters also in this case.
+
+```{r Lasso_Prediction}
+# Create a copy of the train dataset
+train_lasso <- train
+
+# Drop the SalePrice column
+train_lasso$SalePrice <- NULL
+
+# Transform this new dataset in a matrix
+# The glmnet() function need a matrix in input
+train_lasso=as.matrix(train_lasso)
+
+# Use the cross-validation method to estimate the parameters
+fit2 <-cv.glmnet(x = train_lasso, y = log(train$SalePrice + 1))
+
+# Create a new dataset, that is a copy of the original test
+# Also this new dataset has to be a matrix
+test_lasso <- as.matrix(test)
+
+# Make the estimation using the parameters evaluate before
+ris2 <- data.frame(exp(predict(fit2, s="lambda.min", newx=test_lasso)) - 1)
+
+# Create a new dataframe with only two column:
+# 1) Id
+# 2) SalePrice (estimate using Lasso algorithm)
+fina = data.frame(Id = test$Id, SalePrice = ris2)
+
+names(fina) <- c("Id","SalePrice")
+write.csv(fina, file = "Lasso.csv", row.names = F)
+```
+
+# Final result
+
+Now we evaluate the weighted mean between the three previous methods with different weights.  
+We save the final result in a .csv file, called "pred.csv".
+This is our final result, and this file is the one that has to be submitted.
+We tried to run our code on different computers, obtaining different results making submission of "pred.csv".
+We chose the best one.
+
+```{r final_pred}
+# Create a new dataframe where SalePrice column is the average mean of SalePrice obtained with the three methods described above
+subcomb = data.frame(Id = boost_Out$Id, SalePrice = 0.68*boost_Out$prediction+0.10*test_lin$SalePrice + 0.22*ris2)
+
+names(subcomb)=c("Id","SalePrice")
+write.csv(subcomb, file = "pred.csv", row.names = F)
+```
